@@ -1,0 +1,68 @@
+on:
+  workflow_call:
+    inputs:
+      repo_name:
+        description: repo name (e.g. user/repo)
+        type: string
+        required: true
+
+      gem_name:
+        description: gem name
+        type: string
+        required: true
+
+    outputs:
+      tag_name:
+        description: gem version tag (e.g. v1.2.3)
+        value: ${{ jobs.release.outputs.tag_name }}
+
+jobs:
+  release:
+    name: Publish gem to rubygems.org
+
+    if: github.repository == inputs.repo_name
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+
+    outputs:
+      tag_name: ${{ steps.create_release.outputs.tag_name }}
+
+    environment:
+      name: rubygems.org
+      url: https://rubygems.org/gems/${{ inputs.gem_name }}}
+
+    steps:
+      # - name: Harden Runner
+      #   uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+      #   with:
+      #     egress-policy: audit
+
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@8d27f39a5e7ad39aebbcbd1324f7af020229645c # v1.287.0
+        with:
+          bundler-cache: true
+          ruby-version: ruby
+
+      - name: Publish to RubyGems
+        uses: rubygems/release-gem@1c162a739e8b4cb21a676e97b087e8268d8fc40b # v1.1.2
+
+      - name: Create GitHub release
+        id: create_release
+        run: |
+          tag_name="$(git describe --tags --abbrev=0)"
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+
+          options=()
+          if ! [[ "${tag_name}" =~ ^v[0-9.]+$ ]]; then
+            options+=("--prerelease")
+          fi
+
+          gh release create "${tag_name}" --verify-tag --generate-notes "${options[@]}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
